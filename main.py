@@ -2,6 +2,7 @@ import tkinter as tk
 import random
 import json
 import os
+from PIL import Image, ImageTk, ImageSequence
 
 root = tk.Tk()
 root.attributes("-fullscreen", True)
@@ -67,6 +68,8 @@ jump_hold_counter = 0
 
 pipes = []
 coins = []
+flying_enemies = []
+goombas = []
 
 raw_sprites = {}
 sprites = {}
@@ -90,7 +93,13 @@ def register_gif(key, filename, base_zoom):
         pass
 
 
-
+register_sprite("mario_run1", "mario_run1.png", 3)
+register_sprite("mario_run2", "mario_run2.png", 3)
+register_sprite("mario_jump", "mario_jump.png", 3)
+register_sprite("pipe", "pipe.png", 2)
+register_gif("koopa", "enemy_fly.gif", 2)
+register_gif("coin", "Coin.gif", 2)
+register_gif("goomba", "Goomba.gif", 3)
 
 
 def recompute_sprites():
@@ -165,6 +174,25 @@ def create_coin():
     coins.append({"id": coin, "frame": 0, "w": frames[0].width(), "h": frames[0].height()})
 
 
+def create_flying_enemy():
+    frames = sprites.get("koopa")
+    if not frames: return
+    w, h = frames[0].width(), frames[0].height()
+    mode = random.choice(["low", "high"])
+    y = random.randint(int(120 * scale_factor), int(200 * scale_factor)) if mode == "high" else (ground_y - h)
+    enemy = canvas.create_image(current_w, y, anchor="nw", image=frames[0])
+    flying_enemies.append({"id": enemy, "frame": 0, "w": w, "h": h})
+
+
+def create_goomba():
+    frames = sprites.get("goomba")
+    if not frames: return
+    w, h = frames[0].width(), frames[0].height()
+    y = ground_y - h
+    goomba = canvas.create_image(current_w, y, anchor="nw", image=frames[0])
+    goombas.append({"id": goomba, "frame": 0, "w": w, "h": h})
+
+
 # ---------------- УПРАВЛЕНИЕ И ЛОГИКА ----------------
 def start_game():
     global game_state, spawn_timer
@@ -222,11 +250,12 @@ def restart(event=None):
 
     if game_state != "gameover": return
 
-    for f in pipes + coins:
+    for f in flying_enemies + pipes + coins + goombas:
         canvas.delete(f["id"])
-
+    flying_enemies.clear()
     pipes.clear()
     coins.clear()
+    goombas.clear()
 
     if game_over_text:
         canvas.delete(game_over_text)
@@ -292,7 +321,13 @@ def update():
 
     if spawn_timer > spawn_limit:
         spawn_timer = 0
-        create_pipe()
+        choice = random.randint(1, 100)
+        if choice < 40:
+            create_pipe()
+        elif choice < 70:
+            create_flying_enemy()
+        else:
+            create_goomba()
 
     if coin_timer > 110:
         coin_timer = 0
@@ -317,6 +352,43 @@ def update():
         if mx2 > px1 and mx1 < px2 and my2 > py1 and my1 < py2:
             game_over()
             return
+
+    # Движение Куп (Летающие)
+    koopa_frames = sprites.get("koopa")
+    for f in flying_enemies[:]:
+        fid = f["id"]
+        canvas.move(fid, -speed, 0)
+        fx1, fy1 = canvas.coords(fid)
+        fx2, fy2 = fx1 + f["w"], fy1 + f["h"]
+        if bg_offset % 6 == 0 and koopa_frames:
+            f["frame"] = (f["frame"] + 1) % len(koopa_frames)
+            canvas.itemconfig(fid, image=koopa_frames[f["frame"]])
+        if fx2 < 0:
+            canvas.delete(fid)
+            flying_enemies.remove(f)
+            continue
+        if mx2 > fx1 and mx1 < fx2 and my2 > fy1 and my1 < fy2:
+            game_over()
+            return
+
+    # Движение Гумб
+    goomba_img_frames = sprites.get("goomba")
+    for g in goombas[:]:
+        gid = g["id"]
+        canvas.move(gid, -speed, 0)
+        gx1, gy1 = canvas.coords(gid)
+        gx2, gy2 = gx1 + g["w"], gy1 + g["h"]
+        if bg_offset % 6 == 0 and goomba_img_frames:
+            g["frame"] = (g["frame"] + 1) % len(goomba_img_frames)
+            canvas.itemconfig(gid, image=goomba_img_frames[g["frame"]])
+        if gx2 < 0:
+            canvas.delete(gid)
+            goombas.remove(g)
+            continue
+        if mx2 > gx1 and mx1 < gx2 and my2 > gy1 and my1 < gy2:
+            score += 100
+            canvas.delete(gid)
+            goombas.remove(g)
 
     # Движение Монеток
     coin_img_frames = sprites.get("coin")
